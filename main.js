@@ -1,5 +1,5 @@
-import { createRenderer } from "./renderer.js";
-import { createVNode } from "./vnode.js";
+import { createRenderer } from "./src/renderer.js";
+import { createVNode } from "./src/vnode.js";
 
 const renderer = createRenderer();
 const container = document.getElementById("app");
