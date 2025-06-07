@@ -1,0 +1,13 @@
+{
+  "devDependencies": {
+    "chokidar-cli": "^3.0.0",
+    "terser": "^5.41.0"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "terser src/*.js -o dist/bundle.min.js --compress --mangle",
+    "buildES6": "node build.js && terser dist/bundle.js -o dist/bundle.min.js --compress --mangle",
+    "build-debug": "terser src/*.js -o dist/bundle.js --beautify",
+    "watch": "chokidar 'src/**/*.js' -c 'npm run build'"
+  }
+}
