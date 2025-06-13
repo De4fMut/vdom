@@ -1,202 +1,224 @@
-import { PatchFlags } from "./vnode.js";
+import { PatchFlags } from './vnode.js';
 
 export function diff(oldVNode, newVNode) {
-    // 1. Проверка на разные типы
     if (oldVNode.type !== newVNode.type) {
-        return { action: "REPLACE", node: newVNode };
+        return { action: 'REPLACE', node: newVNode };
     }
 
-    const patch = [];
+    const patches = [];
+    
+    // Для текстовых узлов - только обновление текста
+    if (oldVNode.type === Symbol.for('TEXT')) {
+        if (oldVNode.children !== newVNode.children) {
+            patches.push({ type: 'UPDATE_TEXT', value: newVNode.children });
+        }
+        return { action: 'UPDATE', patches };
+    }
+
     const flags = newVNode.flags;
 
-    // 2. Проверка флагов для пропусков
     if (!(flags & PatchFlags.TEXT)) {
-        // 3. Дифф пропсов
-        diffProps(oldVNode, newVNode, patch);
+        diffProps(oldVNode, newVNode, patches);
     }
 
-    // 4. Дифф детей
-    if (!(flags & PatchFlags.KEYED_CHILDREN)) {
-        diffChildren(oldVNode, newVNode, patch);
-    } else {
-        diffKeyedChildren(oldVNode, newVNode, patch);
+    if (Array.isArray(oldVNode.children) && Array.isArray(newVNode.children)) {
+        if (newVNode.flags & PatchFlags.KEYED_CHILDREN) {
+            diffKeyedChildren(oldVNode, newVNode, patches);
+        } else {
+            diffUnkeyedChildren(oldVNode, newVNode, patches);
+        }
     }
 
-    return { action: "UPDATE", patch };
+    return { action: 'UPDATE', patches };
 }
 
-function diffProps(oldVNode, newVNode, patch) {
+function diffProps(oldVNode, newVNode, patches) {
     const oldProps = oldVNode.props;
     const newProps = newVNode.props;
 
-    // Добавление/изменение пропсов
     for (const key in newProps) {
         if (oldProps[key] !== newProps[key]) {
-            patch.push({
-                type: "SET_ATTR",
-                key,
-                value: newProps[key],
-            });
+            patches.push({ type: 'SET_ATTR', key, value: newProps[key] });
         }
     }
 
-    // Удаление пропсов
     for (const key in oldProps) {
         if (!(key in newProps)) {
-            patch.push({
-                type: "REMOVE_ATTR",
-                key,
-            });
+            patches.push({ type: 'REMOVE_ATTR', key });
         }
     }
 }
 
-function diffKeyedChildren(oldVNode, newVNode, patch) {
-    const oldChildren = oldVNode.children || [];
-    const newChildren = newVNode.children || [];
-
-    // 1. Алгоритм с двойными указателями
+function diffKeyedChildren(oldVNode, newVNode, patches) {
+    const oldChildren = oldVNode.children;
+    const newChildren = newVNode.children;
+    
     let i = 0;
     let e1 = oldChildren.length - 1;
     let e2 = newChildren.length - 1;
 
-    // Сравнение от начала
     while (i <= e1 && i <= e2) {
         if (isSameVNode(oldChildren[i], newChildren[i])) {
-            patch.push({
-                type: "PATCH_CHILD",
+            patches.push({
+                type: 'PATCH_CHILD',
                 index: i,
-                patch: diff(oldChildren[i], newChildren[i]),
+                patch: diff(oldChildren[i], newChildren[i])
             });
+            i++;
         } else {
             break;
         }
-        i++;
     }
 
-    // Сравнение от конца
     while (e1 >= i && e2 >= i) {
         if (isSameVNode(oldChildren[e1], newChildren[e2])) {
-            patch.push({
-                type: "PATCH_CHILD",
+            patches.push({
+                type: 'PATCH_CHILD',
                 index: e1,
-                patch: diff(oldChildren[e1], newChildren[e2]),
+                patch: diff(oldChildren[e1], newChildren[e2])
             });
+            e1--;
+            e2--;
         } else {
             break;
         }
-        e1--;
-        e2--;
     }
 
-    // 2. Обработка новых элементов
     if (i > e1 && i <= e2) {
         for (let j = i; j <= e2; j++) {
-            patch.push({
-                type: "ADD_CHILD",
-                index: j,
-                node: newChildren[j],
-            });
+            patches.push({ type: 'ADD_CHILD', index: j, node: newChildren[j] });
         }
-    }
-    // 3. Обработка удаленных элементов
+    } 
     else if (i > e2 && i <= e1) {
         for (let j = i; j <= e1; j++) {
-            patch.push({
-                type: "REMOVE_CHILD",
-                index: j,
+            patches.push({ type: 'REMOVE_CHILD', index: j });
+        }
+    }
+    else {
+        const keyToIndexMap = new Map();
+        for (let j = i; j <= e2; j++) {
+            keyToIndexMap.set(newChildren[j].key, j);
+        }
+
+        const newIndexToOldIndex = new Array(e2 - i + 1).fill(-1);
+        let moved = false;
+        let lastIndex = 0;
+
+        for (let j = i; j <= e1; j++) {
+            const oldChild = oldChildren[j];
+            const newIndex = keyToIndexMap.get(oldChild.key);
+
+            if (newIndex === undefined) {
+                patches.push({ type: 'REMOVE_CHILD', index: j });
+            } else {
+                newIndexToOldIndex[newIndex - i] = j;
+                if (newIndex < lastIndex) {
+                    moved = true;
+                } else {
+                    lastIndex = newIndex;
+                }
+            }
+        }
+
+        if (moved) {
+            const seq = getSequence(newIndexToOldIndex);
+            let seqIndex = seq.length - 1;
+
+            for (let j = newIndexToOldIndex.length - 1; j >= 0; j--) {
+                if (newIndexToOldIndex[j] === -1) {
+                    patches.push({ 
+                        type: 'ADD_CHILD', 
+                        index: j + i, 
+                        node: newChildren[j + i] 
+                    });
+                } else if (j !== seq[seqIndex]) {
+                    patches.push({ 
+                        type: 'MOVE_CHILD', 
+                        from: newIndexToOldIndex[j], 
+                        to: j + i 
+                    });
+                } else {
+                    seqIndex--;
+                }
+            }
+        }
+    }
+}
+
+function diffUnkeyedChildren(oldVNode, newVNode, patches) {
+    const oldChildren = oldVNode.children;
+    const newChildren = newVNode.children;
+    const commonLength = Math.min(oldChildren.length, newChildren.length);
+
+    for (let i = 0; i < commonLength; i++) {
+        patches.push({
+            type: 'PATCH_CHILD',
+            index: i,
+            patch: diff(oldChildren[i], newChildren[i])
+        });
+    }
+
+    if (newChildren.length > oldChildren.length) {
+        for (let i = commonLength; i < newChildren.length; i++) {
+            patches.push({ 
+                type: 'ADD_CHILD', 
+                index: i, 
+                node: newChildren[i] 
             });
         }
     }
-    // 4. Обработка неизвестной последовательности
-    else {
-        const keyToNewIndexMap = new Map();
-        for (let j = i; j <= e2; j++) {
-            keyToNewIndexMap.set(newChildren[j].key, j);
-        }
-
-        const newIndexToOldIndexMap = new Array(e2 - i + 1).fill(-1);
-
-        // Сопоставление старых индексов с новыми
-        for (let j = i; j <= e1; j++) {
-            const oldChild = oldChildren[j];
-            const newIndex = keyToNewIndexMap.get(oldChild.key);
-
-            if (newIndex === undefined) {
-                patch.push({
-                    type: "REMOVE_CHILD",
-                    index: j,
-                });
-            } else {
-                newIndexToOldIndexMap[newIndex - i] = j;
-                patch.push({
-                    type: "PATCH_CHILD",
-                    index: j,
-                    patch: diff(oldChild, newChildren[newIndex]),
-                });
-            }
-        }
-
-        // Поиск самого длинного возрастающего подпоследовательности
-        const seq = findLongestIncreasingSubsequence(newIndexToOldIndexMap);
-        let lastIndex = -1;
-
-        for (let j = 0; j < newIndexToOldIndexMap.length; j++) {
-            if (newIndexToOldIndexMap[j] === -1) {
-                // Добавление нового элемента
-                patch.push({
-                    type: "ADD_CHILD",
-                    index: i + j,
-                    node: newChildren[i + j],
-                });
-            } else if (j !== seq[j]) {
-                // Перемещение элемента
-                patch.push({
-                    type: "MOVE_CHILD",
-                    from: newIndexToOldIndexMap[j],
-                    to: i + j,
-                });
-            }
-            lastIndex = j;
+    else if (oldChildren.length > newChildren.length) {
+        for (let i = commonLength; i < oldChildren.length; i++) {
+            patches.push({ 
+                type: 'REMOVE_CHILD', 
+                index: i 
+            });
         }
     }
 }
 
 function isSameVNode(a, b) {
-    if (!a || !b) return false;
     return a.type === b.type && a.key === b.key;
 }
 
-function findLongestIncreasingSubsequence(arr) {
-    // Реализация алгоритма поиска LIS
-    // (Для краткости используем упрощенную версию)
-    const lis = [0];
-    const prev = new Array(arr.length).fill(-1);
+function getSequence(arr) {
+    const p = arr.slice();
+    const result = [0];
+    let i, j, u, v, c;
 
-    for (let i = 1; i < arr.length; i++) {
+    for (i = 0; i < arr.length; i++) {
         if (arr[i] === -1) continue;
+        
+        j = result[result.length - 1];
+        if (arr[j] < arr[i]) {
+            p[i] = j;
+            result.push(i);
+            continue;
+        }
 
-        if (arr[i] > arr[lis[lis.length - 1]]) {
-            prev[i] = lis[lis.length - 1];
-            lis.push(i);
-        } else {
-            let left = 0,
-                right = lis.length - 1;
-            while (left < right) {
-                const mid = (left + right) >> 1;
-                if (arr[lis[mid]] < arr[i]) {
-                    left = mid + 1;
-                } else {
-                    right = mid;
-                }
+        u = 0;
+        v = result.length - 1;
+        while (u < v) {
+            c = (u + v) >> 1;
+            if (arr[result[c]] < arr[i]) {
+                u = c + 1;
+            } else {
+                v = c;
             }
+        }
 
-            if (arr[i] < arr[lis[left]]) {
-                if (left > 0) prev[i] = lis[left - 1];
-                lis[left] = i;
-            }
+        if (arr[i] < arr[result[u]]) {
+            if (u > 0) p[i] = result[u - 1];
+            result[u] = i;
         }
     }
 
-    return lis;
+    u = result.length;
+    v = result[u - 1];
+    while (u-- > 0) {
+        result[u] = v;
+        v = p[v];
+    }
+
+    return result;
 }

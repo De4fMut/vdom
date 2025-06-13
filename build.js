@@ -2,8 +2,7 @@ import { readFileSync, writeFileSync } from 'fs';
 const files = [
     'src/vnode.js',
     'src/diff.js',
-    'src/renderer.js',
-    'src/main.js'
+    'src/renderer.js'
 ];
 
 let output = '';

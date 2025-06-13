@@ -1,32 +1,69 @@
-import { createRenderer } from "./src/renderer.js";
-import { createVNode } from "./src/vnode.js";
+// import { createRenderer } from './renderer.js';
+// import { createVNode, PatchFlags } from './vnode.js';
+// import { diff, applyVirtualPatch } from './diff.js';
 
 const renderer = createRenderer();
-const container = document.getElementById("app");
+const container = document.getElementById('app');
 
-// Инициализация (теперь без массивов для текста)
-const vnode = createVNode("div", { class: "container" }, [
-    createVNode("h1", {}, "Hello Virtual DOM"), // Просто строка
-    createVNode("ul", {}, [
-        createVNode("li", { key: "a" }, "Item A"),
-        createVNode("li", { key: "b" }, "Item B"),
-        createVNode("li", { key: "c" }, "Item C"),
-    ]),
-]);
+// Application state
+let state = {
+    title: 'Virtual DOM Demo',
+    items: [
+        { id: 'a', text: 'Item A' },
+        { id: 'b', text: 'Item B' },
+        { id: 'c', text: 'Item C' }
+    ]
+};
 
-renderer.mount(vnode, container);
-
-// Обновление через 2 секунды
-setTimeout(() => {
-    const newVNode = createVNode("div", { class: "container modified" }, [
-        createVNode("h1", {}, "Updated Virtual DOM"),
-        createVNode("ul", {}, [
-            createVNode("li", { key: "d" }, "New Item D"),
-            createVNode("li", { key: "a" }, "Updated Item A"),
-            createVNode("li", { key: "c" }, "Item C"),
-            createVNode("li", { key: "e" }, "New Item E"),
-        ]),
+// Render function
+function render(state) {
+    return createVNode('div', { class: 'container' }, [
+        createVNode('h1', {}, state.title),
+        createVNode('ul', { 
+            key: 'list',
+            flags: PatchFlags.KEYED_CHILDREN 
+        }, state.items.map(item => 
+            createVNode('li', { 
+                key: item.id,
+                onClick: () => alert(`Clicked: ${item.text}`)
+            }, item.text)
+        )),
+        createVNode('button', {
+            onClick: () => addRandomItem()
+        }, 'Add Random Item')
     ]);
+}
 
-    renderer.patch(() => renderer.patch(vnode, newVNode));
-}, 2000);
+// Add random item
+function addRandomItem() {
+    console.log(state)
+    const newId = Math.random().toString(36).slice(2, 6);
+    state.items = [
+        { id: newId, text: `Item ${newId.toUpperCase()}` },
+        ...state.items
+    ];
+    update();
+}
+
+// Initial render
+let currentVNode = render(state);
+renderer.mount(currentVNode, container);
+
+// Update UI
+function update() {
+    const newVNode = render(state);
+    renderer.patch(() => {
+        currentVNode = applyVirtualPatch(currentVNode, newVNode);
+    });
+}
+
+// Demo update after 2 seconds
+// setTimeout(() => {
+//     state.title = 'Updated Virtual DOM';
+//     state.items = [
+//         { id: 'd', text: 'New Item D' },
+//         { id: 'a', text: 'Updated Item A' },
+//         { id: 'e', text: 'Item E' }
+//     ];
+//     update();
+// }, 2000);

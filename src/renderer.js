@@ -1,115 +1,130 @@
-import { diff } from "./diff.js";
-import { createTextVNode } from "./vnode.js";
-
 export function createRenderer() {
     const scheduler = createScheduler();
-
+    
     return {
         mount,
         patch: scheduler.queueUpdate,
-        unmount,
+        unmount
     };
 }
 
 function mount(vnode, container) {
-    try {
-        // Обработка текстовых узлов
-        if (vnode.type === Symbol.for("TEXT")) {
-            const el = document.createTextNode(vnode.children);
-            vnode.el = el;
-            container.appendChild(el);
-            return el;
-        }
-
-        // Обработка компонентов
-        if (typeof vnode.type === "function") {
-            return mountComponent(vnode, container);
-        }
-
-        // Создание DOM-элемента
-        const el = document.createElement(vnode.type);
+    if (vnode.type === Symbol.for('TEXT')) {
+        const el = document.createTextNode(vnode.children);
         vnode.el = el;
-
-        // Установка атрибутов
-        for (const key in vnode.props) {
-            setAttribute(el, key, vnode.props[key]);
-        }
-
-        // Обработка детей
-        if (Array.isArray(vnode.children)) {
-            vnode.children.forEach((child) => {
-                mount(child, el);
-            });
-        } else if (vnode.children !== null && vnode.children !== undefined) {
-            el.textContent = vnode.children.toString();
-        }
-
         container.appendChild(el);
         return el;
-    } catch (error) {
-        console.error("Mount error:", error);
-        const fallback = createTextVNode("Render error");
-        return mount(fallback, container);
+    }
+
+    const el = document.createElement(vnode.type);
+    vnode.el = el;
+
+    for (const key in vnode.props) {
+        setAttribute(el, key, vnode.props[key]);
+    }
+
+    if (Array.isArray(vnode.children)) {
+        vnode.children.forEach(child => {
+            if (child) {
+                const childEl = mount(child, el);
+                if (childEl) {
+                    el.appendChild(childEl);
+                }
+            }
+        });
+    }
+
+    container.appendChild(el);
+    return el;
+}
+
+function applyVirtualPatch(oldVNode, newVNode) {
+    const diffResult = diff(oldVNode, newVNode);
+    
+    if (diffResult.action === 'REPLACE') {
+        const parent = oldVNode.el.parentNode;
+        unmount(oldVNode);
+        return mount(newVNode, parent);
+    } else {
+        applyDomPatches(oldVNode.el, diffResult.patches);
+        newVNode.el = oldVNode.el;
+        return newVNode;
     }
 }
 
-function patch(oldVNode, newVNode) {
-    try {
-        const diffResult = diff(oldVNode, newVNode);
-
-        switch (diffResult.action) {
-            case "REPLACE":
-                unmount(oldVNode);
-                return mount(newVNode, oldVNode.el.parentNode);
-            case "UPDATE":
-                applyPatch(oldVNode.el, diffResult.patch);
-                return oldVNode.el;
-        }
-    } catch (error) {
-        console.error("Patch error:", error);
-        return oldVNode.el; // Сохраняем существующий DOM
-    }
-}
-
-function applyPatch(el, patch) {
-    patch.forEach((change) => {
-        switch (change.type) {
-            case "SET_ATTR":
-                setAttribute(el, change.key, change.value);
+function applyDomPatches(el, patches) {
+    patches.forEach(patch => {
+        switch (patch.type) {
+            case 'SET_ATTR':
+                setAttribute(el, patch.key, patch.value);
                 break;
-            case "REMOVE_ATTR":
-                el.removeAttribute(change.key);
+            case 'REMOVE_ATTR':
+                el.removeAttribute(patch.key);
                 break;
-            case "ADD_CHILD":
-                const newChild = change.node;
-                mount(newChild, el);
-                break;
-            case "REMOVE_CHILD":
-                const child = el.childNodes[change.index];
-                el.removeChild(child);
-                break;
-            case "MOVE_CHILD":
-                const node = el.childNodes[change.from];
-                const targetNode = el.childNodes[change.to];
-                if (change.to < change.from) {
-                    el.insertBefore(node, targetNode);
-                } else {
-                    el.insertBefore(node, targetNode.nextSibling);
+            case 'ADD_CHILD':
+                const newChild = mount(patch.node, document.createElement('div'));
+                if (newChild) {
+                    el.appendChild(newChild);
                 }
                 break;
-            case "PATCH_CHILD":
-                const childNode = el.childNodes[change.index];
-                patch(change.patch.oldVNode, change.patch.newVNode);
+            case 'REMOVE_CHILD':
+                if (el.childNodes[patch.index]) {
+                    el.removeChild(el.childNodes[patch.index]);
+                }
+                break;
+            case 'MOVE_CHILD':
+                const nodeToMove = el.childNodes[patch.from];
+                if (nodeToMove) {
+                    highlightNode(nodeToMove);
+                    const targetNode = el.childNodes[patch.to];
+                    if (targetNode) {
+                        el.insertBefore(nodeToMove, targetNode);
+                    } else {
+                        el.appendChild(nodeToMove);
+                    }
+                }
+                break;
+            case 'PATCH_CHILD':
+                const childNode = el.childNodes[patch.index];
+                if (childNode) {
+                    patchChildNode(childNode, patch.patch);
+                }
+                break;
+            case 'UPDATE_TEXT':
+                if (el.nodeType === Node.TEXT_NODE) {
+                    el.nodeValue = patch.value;
+                }
                 break;
         }
     });
 }
 
+function patchChildNode(el, diffResult) {
+    if (diffResult.action === 'REPLACE') {
+        const parent = el.parentNode;
+        const newEl = mount(diffResult.node, parent);
+        parent.replaceChild(newEl, el);
+    } else {
+        applyDomPatches(el, diffResult.patches);
+    }
+}
+
+function highlightNode(node) {
+    node.classList.add('highlight');
+    setTimeout(() => {
+        node.classList.remove('highlight');
+    }, 300);
+}
+
 function setAttribute(el, key, value) {
-    if (key.startsWith("on")) {
-        const event = key.slice(2).toLowerCase();
-        el.addEventListener(event, value);
-    } else if (key === "style") {
+    if (key.startsWith('on') && typeof value === 'function') {
+        const keyLC = key.toLowerCase()
+        console.dir(el)
+        const event = keyLC.slice(2);
+        // el.addEventListener(event, value);
+        el[keyLC] = value
+        // console.dir(window)
+    } else if (key === 'style' && typeof value === 'object') {
         Object.assign(el.style, value);
     } else {
         el.setAttribute(key, value);
@@ -117,35 +132,17 @@ function setAttribute(el, key, value) {
 }
 
 function unmount(vnode) {
-    if (vnode.component) {
-        // Вызов хуков жизненного цикла
+    if (vnode.el && vnode.el.parentNode) {
+        vnode.el.parentNode.removeChild(vnode.el);
     }
-    vnode.el.parentNode.removeChild(vnode.el);
 }
 
-// Компонентная система
-function mountComponent(vnode, container) {
-    const component = {
-        render: vnode.type,
-        state: {},
-        props: vnode.props,
-        vnode,
-    };
-
-    vnode.component = component;
-    const renderResult = component.render(component.props);
-    vnode.children = [renderResult];
-
-    return mount(renderResult, container);
-}
-
-// Планировщик для асинхронных обновлений
 function createScheduler() {
     let queue = [];
     let isFlushing = false;
 
-    function queueUpdate(update) {
-        queue.push(update);
+    function queueUpdate(updateFn) {
+        queue.push(updateFn);
         if (!isFlushing) {
             isFlushing = true;
             Promise.resolve().then(flushQueue);
@@ -153,8 +150,9 @@ function createScheduler() {
     }
 
     function flushQueue() {
-        queue.forEach((update) => update());
+        const currentQueue = [...queue];
         queue = [];
+        currentQueue.forEach(fn => fn());
         isFlushing = false;
     }
 

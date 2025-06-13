@@ -1,4 +1,3 @@
-// Флаги для оптимизации диффинга
 export const PatchFlags = {
     TEXT: 1,
     CLASS: 2,
@@ -7,25 +6,13 @@ export const PatchFlags = {
     FULL_PROPS: 16,
     KEYED_CHILDREN: 32,
     UNKEYED_CHILDREN: 64,
-    COMPONENT: 128,
+    COMPONENT: 128
 };
 
 export function createVNode(type, props = {}, children = []) {
-    // Автоматическое создание текстовых узлов
-    if (typeof children === "string") {
-        return createTextVNode(children);
-    }
-
+    const normalizedChildren = normalizeChildren(children);
     const key = props.key || null;
-    delete props.key;
-
-    // Нормализация детей
-    let normalizedChildren = children;
-    if (Array.isArray(children)) {
-        normalizedChildren = children.map((child) =>
-            typeof child === "string" ? createTextVNode(child) : child
-        );
-    }
+    if (props.key) delete props.key;
 
     return {
         type,
@@ -34,37 +21,35 @@ export function createVNode(type, props = {}, children = []) {
         key,
         el: null,
         flags: 0,
-        component: null,
-        shapeFlag: getShapeFlag(type, normalizedChildren),
-        ctx: null,
+        shapeFlag: getShapeFlag(type, normalizedChildren)
     };
 }
 
 export function createTextVNode(text) {
     return {
-        type: Symbol.for("TEXT"),
+        type: Symbol.for('TEXT'),
         props: {},
-        children: text,
+        children: String(text),
         el: null,
         key: null,
-        flags: PatchFlags.TEXT,
+        flags: PatchFlags.TEXT
     };
+}
+
+function normalizeChildren(children) {
+    if (Array.isArray(children)) {
+        return children.map(child => 
+            (typeof child === 'string' || typeof child === 'number') 
+                ? createTextVNode(child) 
+                : child
+        );
+    }
+    return [createTextVNode(children)];
 }
 
 function getShapeFlag(type, children) {
     let flag = 0;
-
-    if (typeof type === "string") {
-        flag |= 1; // ELEMENT
-    } else if (typeof type === "object" || typeof type === "function") {
-        flag |= 2; // COMPONENT
-    }
-
-    if (Array.isArray(children)) {
-        flag |= 4; // ARRAY_CHILDREN
-    } else if (typeof children === "string") {
-        flag |= 8; // TEXT_CHILDREN
-    }
-
+    if (typeof type === 'string') flag |= 1;
+    if (children.length > 0) flag |= 4;
     return flag;
 }
