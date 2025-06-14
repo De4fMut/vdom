@@ -1,95 +1,79 @@
+import { diff } from './diff.js';
+import { createTextVNode } from './vnode.js';
+
 export function createRenderer() {
     const scheduler = createScheduler();
     
     return {
         mount,
         patch: scheduler.queueUpdate,
-        unmount
+        unmount,
+        applyPatch
     };
 }
 
 function mount(vnode, container) {
-    if (vnode.type === Symbol.for('TEXT')) {
-        const el = document.createTextNode(vnode.children);
-        vnode.el = el;
-        container.appendChild(el);
-        return el;
-    }
-
-    const el = document.createElement(vnode.type);
-    vnode.el = el;
-
-    for (const key in vnode.props) {
-        setAttribute(el, key, vnode.props[key]);
-    }
-
-    if (Array.isArray(vnode.children)) {
+    let el;
+    console.dir(vnode)
+    // return
+    
+    if (vnode.tag === null) {
+        el = document.createTextNode(vnode.children);
+    } else {
+        el = document.createElement(vnode.tag);
+        
+        // Установка свойств
+        for (const key in vnode.props) {
+            setAttribute(el, key, vnode.props[key], vnode);
+        }
+        
+        // Рекурсивное монтирование детей
         vnode.children.forEach(child => {
             if (child) {
-                const childEl = mount(child, el);
-                if (childEl) {
-                    el.appendChild(childEl);
-                }
+                const childEl = mount(child, document.createElement('div'));
+                el.appendChild(childEl);
             }
         });
     }
-
+    
+    vnode.el = el;
     container.appendChild(el);
     return el;
 }
 
-function applyVirtualPatch(oldVNode, newVNode) {
-    const diffResult = diff(oldVNode, newVNode);
-    
-    if (diffResult.action === 'REPLACE') {
-        const parent = oldVNode.el.parentNode;
-        unmount(oldVNode);
-        return mount(newVNode, parent);
-    } else {
-        applyDomPatches(oldVNode.el, diffResult.patches);
-        newVNode.el = oldVNode.el;
-        return newVNode;
-    }
-}
-
-function applyDomPatches(el, patches) {
+function applyPatch(el, patches) {
     patches.forEach(patch => {
         switch (patch.type) {
             case 'SET_ATTR':
                 setAttribute(el, patch.key, patch.value);
                 break;
+                
             case 'REMOVE_ATTR':
                 el.removeAttribute(patch.key);
                 break;
+                
             case 'ADD_CHILD':
                 const newChild = mount(patch.node, document.createElement('div'));
-                if (newChild) {
+                if (el.childNodes[patch.index]) {
+                    el.insertBefore(newChild, el.childNodes[patch.index]);
+                } else {
                     el.appendChild(newChild);
                 }
                 break;
+                
             case 'REMOVE_CHILD':
                 if (el.childNodes[patch.index]) {
                     el.removeChild(el.childNodes[patch.index]);
                 }
                 break;
-            case 'MOVE_CHILD':
-                const nodeToMove = el.childNodes[patch.from];
-                if (nodeToMove) {
-                    highlightNode(nodeToMove);
-                    const targetNode = el.childNodes[patch.to];
-                    if (targetNode) {
-                        el.insertBefore(nodeToMove, targetNode);
-                    } else {
-                        el.appendChild(nodeToMove);
-                    }
-                }
-                break;
+                
             case 'PATCH_CHILD':
-                const childNode = el.childNodes[patch.index];
-                if (childNode) {
-                    patchChildNode(childNode, patch.patch);
+                const childEl = el.childNodes[patch.index];
+                if (childEl) {
+                    patchNode(childEl, patch.patch);
                 }
                 break;
+                
             case 'UPDATE_TEXT':
                 if (el.nodeType === Node.TEXT_NODE) {
                     el.nodeValue = patch.value;
@@ -99,35 +83,60 @@ function applyDomPatches(el, patches) {
     });
 }
 
-function patchChildNode(el, diffResult) {
+function patchNode(el, diffResult) {
     if (diffResult.action === 'REPLACE') {
         const parent = el.parentNode;
         const newEl = mount(diffResult.node, parent);
         parent.replaceChild(newEl, el);
     } else {
-        applyDomPatches(el, diffResult.patches);
+        applyPatch(el, diffResult.patches);
     }
 }
 
-function highlightNode(node) {
-    node.classList.add('highlight');
-    setTimeout(() => {
-        node.classList.remove('highlight');
-    }, 300);
-}
-
-function setAttribute(el, key, value) {
-    if (key.startsWith('on') && typeof value === 'function') {
-        const keyLC = key.toLowerCase()
-        console.dir(el)
-        const event = keyLC.slice(2);
-        // el.addEventListener(event, value);
-        el[keyLC] = value
-        // console.dir(window)
-    } else if (key === 'style' && typeof value === 'object') {
-        Object.assign(el.style, value);
+function setAttribute(el, key, value, vnode) {
+    if (key.startsWith('on')) {
+        const eventName = key.slice(2).toLowerCase();
+        
+        // Удаление предыдущего обработчика
+        if (vnode.eventHandlers.has(eventName)) {
+            const prevHandler = vnode.eventHandlers.get(eventName);
+            el.removeEventListener(eventName, prevHandler);
+        }
+        
+        // Добавление нового обработчика
+        el.addEventListener(eventName, value);
+        vnode.eventHandlers.set(eventName, value);
     } else {
         el.setAttribute(key, value);
+    }
+}
+
+function updatePropsAndEvents(oldVNode, newVNode) {
+    const el = oldVNode.el;
+    const oldProps = oldVNode.props;
+    const newProps = newVNode.props;
+    
+    // Удаление старых атрибутов
+    for (const key in oldProps) {
+        if (!(key in newProps)) {
+            if (key.startsWith('on')) {
+                const eventName = key.slice(2).toLowerCase();
+                if (oldVNode.eventHandlers.has(eventName)) {
+                    const handler = oldVNode.eventHandlers.get(eventName);
+                    el.removeEventListener(eventName, handler);
+                    oldVNode.eventHandlers.delete(eventName);
+                }
+            } else {
+                el.removeAttribute(key);
+            }
+        }
+    }
+    
+    // Добавление/обновление атрибутов
+    for (const key in newProps) {
+        if (oldProps[key] !== newProps[key]) {
+            setAttribute(el, key, newProps[key], newVNode);
+        }
     }
 }
 

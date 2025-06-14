@@ -9,29 +9,58 @@ export const PatchFlags = {
     COMPONENT: 128
 };
 
-export function createVNode(type, props = {}, children = []) {
+// export function createVNode(type, props = {}, children = []) {
+//     const normalizedChildren = normalizeChildren(children);
+//     const key = props.key || null;
+//     if (props.key) delete props.key;
+
+//     return {
+//         type,
+//         props,
+//         children: normalizedChildren,
+//         key,
+//         el: null,
+//         flags: 0,
+//         shapeFlag: getShapeFlag(type, normalizedChildren)
+//     };
+// }
+
+// export function createTextVNode(text) {
+//     return {
+//         type: Symbol.for('TEXT'),
+//         props: {},
+//         children: String(text),
+//         el: null,
+//         key: null,
+//         flags: PatchFlags.TEXT
+//     };
+// }
+
+export function createVNode(tag, props = {}, children = []) {
     const normalizedChildren = normalizeChildren(children);
     const key = props.key || null;
     if (props.key) delete props.key;
 
     return {
-        type,
+        tag,
         props,
         children: normalizedChildren,
         key,
         el: null,
+        eventHandlers: new Map(),
+        key: props?.key || null,
         flags: 0,
-        shapeFlag: getShapeFlag(type, normalizedChildren)
+        shapeFlag: getShapeFlag(tag, normalizedChildren)
     };
 }
 
 export function createTextVNode(text) {
     return {
-        type: Symbol.for('TEXT'),
+        tag: null,
         props: {},
         children: String(text),
         el: null,
-        key: null,
+        eventHandlers: new Map(),
         flags: PatchFlags.TEXT
     };
 }

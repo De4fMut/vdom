@@ -1,69 +1,70 @@
+// import { reactive } from './reactivity.js';
+// import { createVNode } from './vnode.js';
 // import { createRenderer } from './renderer.js';
-// import { createVNode, PatchFlags } from './vnode.js';
-// import { diff, applyVirtualPatch } from './diff.js';
+// import { effect } from './reactivity.js';
+// import { diff } from './diff.js'; // Импорт diff
 
-const renderer = createRenderer();
-const container = document.getElementById('app');
+// Реактивное состояние
+const state = reactive({
+    title: "Reactive Virtual DOM",
+    count: 0,
+    lastEvent: "No events yet"
+});
 
-// Application state
-let state = {
-    title: 'Virtual DOM Demo',
-    items: [
-        { id: 'a', text: 'Item A' },
-        { id: 'b', text: 'Item B' },
-        { id: 'c', text: 'Item C' }
-    ]
-};
-
-// Render function
-function render(state) {
+// Функция рендеринга
+function renderApp() {
     return createVNode('div', { class: 'container' }, [
         createVNode('h1', {}, state.title),
-        createVNode('ul', { 
-            key: 'list',
-            flags: PatchFlags.KEYED_CHILDREN 
-        }, state.items.map(item => 
-            createVNode('li', { 
-                key: item.id,
-                onClick: () => alert(`Clicked: ${item.text}`)
-            }, item.text)
-        )),
-        createVNode('button', {
-            onClick: () => addRandomItem()
-        }, 'Add Random Item')
+        createVNode('div', {}, [
+            createVNode('button', { 
+                onClick: () => state.count-- 
+            }, 'Decrement'),
+            createVNode('span', { class: 'counter' }, state.count),
+            createVNode('button', { 
+                onClick: () => state.count++ 
+            }, 'Increment')
+        ]),
+        createVNode('p', {}, `Count: ${state.count}`),
+        createVNode('button', { 
+            onClick: () => {
+                state.lastEvent = `Clicked at ${new Date().toLocaleTimeString()}`;
+            }
+        }, 'Record Event'),
+        createVNode('p', {}, state.lastEvent)
     ]);
 }
 
-// Add random item
-function addRandomItem() {
-    console.log(state)
-    const newId = Math.random().toString(36).slice(2, 6);
-    state.items = [
-        { id: newId, text: `Item ${newId.toUpperCase()}` },
-        ...state.items
-    ];
-    update();
+// Создание рендерера
+const renderer = createRenderer();
+const container = document.getElementById('app');
+
+// Функция для применения патчей
+function applyPatch(oldVNode, newVNode) {
+    const diffResult = diff(oldVNode, newVNode);
+    
+    if (diffResult.action === 'REPLACE') {
+        container.innerHTML = '';
+        return renderer.mount(newVNode, container);
+    } else {
+        renderer.applyPatch(oldVNode.el, diffResult.patches);
+        // applyVirtualPatch(oldVNode.el, diffResult.patches);
+        return newVNode;
+    }
 }
 
-// Initial render
-let currentVNode = render(state);
+// Инициализация
+let currentVNode = renderApp();
 renderer.mount(currentVNode, container);
 
-// Update UI
-function update() {
-    const newVNode = render(state);
+// Реактивное обновление
+effect(() => {
+    const newVNode = renderApp();
     renderer.patch(() => {
-        currentVNode = applyVirtualPatch(currentVNode, newVNode);
+        currentVNode = applyPatch(currentVNode, newVNode);
     });
-}
+});
 
-// Demo update after 2 seconds
-// setTimeout(() => {
-//     state.title = 'Updated Virtual DOM';
-//     state.items = [
-//         { id: 'd', text: 'New Item D' },
-//         { id: 'a', text: 'Updated Item A' },
-//         { id: 'e', text: 'Item E' }
-//     ];
-//     update();
-// }, 2000);
+// Демо: обновление заголовка каждые 5 секунд
+setInterval(() => {
+    state.title = `Updated: ${new Date().toLocaleTimeString()}`;
+}, 5000);
