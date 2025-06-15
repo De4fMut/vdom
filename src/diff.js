@@ -1,14 +1,19 @@
 import { PatchFlags } from './vnode.js';
 
 export function diff(oldVNode, newVNode) {
-    if (oldVNode.type !== newVNode.type) {
+    // const OTag = oldVNode.tag || oldVNode.nodeName.toLowerCase()
+    // console.dir(oldVNode)
+    if (!oldVNode){
+        return { action: 'NEW', node: newVNode };
+    }
+    if (oldVNode.tag !== newVNode.tag) {
         return { action: 'REPLACE', node: newVNode };
     }
 
     const patches = [];
     
-    // Для текстовых узлов - только обновление текста
-    if (oldVNode.type === Symbol.for('TEXT')) {
+    // Для текстовых узлов
+    if (oldVNode.tag === null) {
         if (oldVNode.children !== newVNode.children) {
             patches.push({ type: 'UPDATE_TEXT', value: newVNode.children });
         }
@@ -178,7 +183,7 @@ function diffUnkeyedChildren(oldVNode, newVNode, patches) {
 }
 
 function isSameVNode(a, b) {
-    return a.type === b.type && a.key === b.key;
+    return a.tag === b.tag && a.key === b.key;
 }
 
 function getSequence(arr) {

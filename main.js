@@ -1,17 +1,14 @@
-// import { reactive } from './reactivity.js';
+// import { reactive, effect } from './reactivity.js';
 // import { createVNode } from './vnode.js';
 // import { createRenderer } from './renderer.js';
-// import { effect } from './reactivity.js';
-// import { diff } from './diff.js'; // Импорт diff
+// import { diff } from './diff.js';
 
-// Реактивное состояние
 const state = reactive({
     title: "Reactive Virtual DOM",
     count: 0,
     lastEvent: "No events yet"
 });
 
-// Функция рендеринга
 function renderApp() {
     return createVNode('div', { class: 'container' }, [
         createVNode('h1', {}, state.title),
@@ -34,29 +31,28 @@ function renderApp() {
     ]);
 }
 
-// Создание рендерера
 const renderer = createRenderer();
 const container = document.getElementById('app');
 
-// Функция для применения патчей
 function applyPatch(oldVNode, newVNode) {
     const diffResult = diff(oldVNode, newVNode);
     
     if (diffResult.action === 'REPLACE') {
         container.innerHTML = '';
-        return renderer.mount(newVNode, container);
+        newVNode.el = renderer.mount(newVNode, container);
+        return newVNode;
     } else {
+        // console.dir(oldVNode.el, diffResult.patches);
+        // return
         renderer.applyPatch(oldVNode.el, diffResult.patches);
-        // applyVirtualPatch(oldVNode.el, diffResult.patches);
+        newVNode.el = oldVNode.el;
         return newVNode;
     }
 }
 
-// Инициализация
 let currentVNode = renderApp();
-renderer.mount(currentVNode, container);
+currentVNode.el = renderer.mount(currentVNode, container);
 
-// Реактивное обновление
 effect(() => {
     const newVNode = renderApp();
     renderer.patch(() => {
@@ -64,7 +60,6 @@ effect(() => {
     });
 });
 
-// Демо: обновление заголовка каждые 5 секунд
 setInterval(() => {
     state.title = `Updated: ${new Date().toLocaleTimeString()}`;
 }, 5000);

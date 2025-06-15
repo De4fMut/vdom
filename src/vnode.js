@@ -48,7 +48,6 @@ export function createVNode(tag, props = {}, children = []) {
         key,
         el: null,
         eventHandlers: new Map(),
-        key: props?.key || null,
         flags: 0,
         shapeFlag: getShapeFlag(tag, normalizedChildren)
     };

@@ -14,7 +14,7 @@ export function createRenderer() {
 
 function mount(vnode, container) {
     let el;
-    console.dir(vnode)
+    // console.dir(vnode)
     // return
     
     if (vnode.tag === null) {
@@ -84,6 +84,7 @@ function applyPatch(el, patches) {
 }
 
 function patchNode(el, diffResult) {
+    console.log(diffResult)
     if (diffResult.action === 'REPLACE') {
         const parent = el.parentNode;
         const newEl = mount(diffResult.node, parent);
